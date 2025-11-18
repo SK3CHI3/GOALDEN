@@ -66,8 +66,21 @@ export function AnalyticsDashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [timeRange, setTimeRange] = useState<TimeRange>('30d')
 
+  // Calculate smart interval for X-axis labels based on time range
+  const getXAxisInterval = () => {
+    switch (timeRange) {
+      case '7d': return 0 // Show all labels for 7 days
+      case '14d': return 1 // Show every other day for 14 days
+      case '30d': return 4 // Show every 4-5 days for 30 days (cleaner)
+      case '90d': return 6 // Show every 6-7 days for 90 days (weekly-ish)
+      case 'all': return 0 // Show all months for all time
+      default: return 0
+    }
+  }
+
   useEffect(() => {
     async function loadAnalytics() {
+      setLoading(true) // Set loading when timeRange changes
       const supabase = createClient()
       
       try {
@@ -139,24 +152,33 @@ export function AnalyticsDashboard() {
         // Generate dynamic timeline data based on time range
         const timelineData = []
         const dataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 12
-        const isMonthly = timeRange === '90d' || timeRange === 'all'
+        const isMonthly = timeRange === 'all'
+        const is90Days = timeRange === '90d'
         
         for (let i = dataPoints - 1; i >= 0; i--) {
           const date = new Date()
           if (isMonthly) {
-          date.setMonth(date.getMonth() - i)
+            date.setMonth(date.getMonth() - i)
+          } else if (is90Days) {
+            date.setDate(date.getDate() - i)
           } else {
             date.setDate(date.getDate() - i)
           }
           
-          const label = isMonthly 
-            ? date.toLocaleDateString('en-US', { month: 'short' })
-            : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          let label: string
+          if (isMonthly) {
+            label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+          } else if (is90Days) {
+            // For 90 days, show day and month (e.g., "Jan 15")
+            label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          } else {
+            label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          }
           
           const periodTournaments = filteredTournaments.filter(t => {
             const created = new Date(t.created_at || '')
             if (isMonthly) {
-            return created.getMonth() === date.getMonth() && created.getFullYear() === date.getFullYear()
+              return created.getMonth() === date.getMonth() && created.getFullYear() === date.getFullYear()
             } else {
               return created.toDateString() === date.toDateString()
             }
@@ -207,51 +229,63 @@ export function AnalyticsDashboard() {
           }
         })
 
-        // Generate timeline data for signups by format (like revenue trend)
+        // Generate timeline data for total signups (like revenue trend)
         const formatSignupsTimeline = []
         const formatDataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 12
-        const isFormatMonthly = timeRange === '90d' || timeRange === 'all'
-        
-        // Get all unique formats from all tournaments (not just filtered) to show all possible formats
-        const allFormats = Array.from(new Set(tournaments.map(t => t.format)))
+        const isFormatMonthly = timeRange === 'all'
+        const isFormat90Days = timeRange === '90d'
         
         for (let i = formatDataPoints - 1; i >= 0; i--) {
           const date = new Date()
           if (isFormatMonthly) {
             date.setMonth(date.getMonth() - i)
+          } else if (isFormat90Days) {
+            date.setDate(date.getDate() - i)
           } else {
             date.setDate(date.getDate() - i)
           }
           
-          const label = isFormatMonthly 
-            ? date.toLocaleDateString('en-US', { month: 'short' })
-            : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          let label: string
+          if (isFormatMonthly) {
+            label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+          } else if (isFormat90Days) {
+            // For 90 days, show day and month (e.g., "Jan 15")
+            label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          } else {
+            label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          }
           
-          const periodData: { period: string; [key: string]: string | number } = { period: label }
-          
-          // Count signups per format for this period
-          allFormats.forEach(format => {
-            const formatName = format.replace('_', ' ').toUpperCase()
+          // Count total signups for this period
+          const periodRegistrations = registrations.filter(r => {
+            const registered = new Date(r.registered_at || '')
             
-            // Get registrations for this format in this time period
-            const periodRegistrations = registrations.filter(r => {
-              const registered = new Date(r.registered_at || '')
-              const tournament = tournaments.find(t => t.id === r.tournament_id && t.format === format)
-              
-              if (!tournament) return false
-              
-              // Check if registration is within the time period
-              if (isFormatMonthly) {
-                return registered.getMonth() === date.getMonth() && registered.getFullYear() === date.getFullYear()
-              } else {
-                return registered.toDateString() === date.toDateString()
-              }
-            })
-            
-            periodData[formatName] = periodRegistrations.length
+            // Check if registration is within the time period
+            if (isFormatMonthly) {
+              return registered.getMonth() === date.getMonth() && registered.getFullYear() === date.getFullYear()
+            } else {
+              return registered.toDateString() === date.toDateString()
+            }
           })
           
-          formatSignupsTimeline.push(periodData)
+          // Count tournaments created in this period
+          const periodTournaments = tournaments.filter(t => {
+            const created = new Date(t.created_at || '')
+            if (isFormatMonthly) {
+              return created.getMonth() === date.getMonth() && created.getFullYear() === date.getFullYear()
+            } else {
+              return created.toDateString() === date.toDateString()
+            }
+          })
+          
+          // Calculate percentage: signups per tournament (average signups per tournament)
+          const signupPercentage = periodTournaments.length > 0 
+            ? (periodRegistrations.length / periodTournaments.length) * 100 
+            : 0
+          
+          formatSignupsTimeline.push({
+            period: label,
+            signups: Math.round(signupPercentage * 10) / 10 // Round to 1 decimal
+          })
         }
 
         // Player activity with real data (last 14 days)
@@ -481,22 +515,24 @@ export function AnalyticsDashboard() {
           </CardHeader>
           <CardContent>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={analytics.monthlyRevenue} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <ResponsiveContainer width="100%" height="100%" key={`revenue-${timeRange}`}>
+                <AreaChart data={analytics.monthlyRevenue || []} margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={COLORS.success} stopOpacity={0.4}/>
                       <stop offset="95%" stopColor={COLORS.success} stopOpacity={0.1}/>
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.3} horizontal={true} vertical={false} />
                   <XAxis 
                     dataKey="period" 
                     tick={{ fill: '#6b7280', fontSize: 11 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={70}
-                    interval="preserveStartEnd"
+                    angle={0}
+                    textAnchor="middle"
+                    height={50}
+                    interval={getXAxisInterval()}
+                    tickMargin={10}
+                    key={`xaxis-${timeRange}`}
                   />
                   <YAxis 
                     tick={{ fill: '#6b7280', fontSize: 11 }}
@@ -505,6 +541,10 @@ export function AnalyticsDashboard() {
                       if (value >= 1000) return `KES ${(value / 1000).toFixed(1)}K`
                       return `KES ${value}`
                     }}
+                    domain={[0, 'auto']}
+                    allowDecimals={false}
+                    tickCount={6}
+                    width={50}
                     label={{ value: 'Revenue (KES)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
                   />
                   <Tooltip 
@@ -541,42 +581,42 @@ export function AnalyticsDashboard() {
           <CardHeader className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" style={{ color: COLORS.secondary }} />
-              New Player Signups by Format
+              Signups per Tournament
             </CardTitle>
             <Calendar className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" key={`signups-${timeRange}`}>
                 <LineChart 
-                  data={analytics.formatSignupsOverTime} 
-                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  data={analytics.formatSignupsOverTime || []} 
+                  margin={{ top: 10, right: 30, left: 10, bottom: 0 }}
                 >
-                  <defs>
-                    <linearGradient id="colorSingleElimination" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={COLORS.secondary} stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor={COLORS.secondary} stopOpacity={0.1}/>
-                    </linearGradient>
-                    <linearGradient id="colorDoubleElimination" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.3} horizontal={true} vertical={false} />
                   <XAxis 
                     dataKey="period" 
                     tick={{ fill: '#6b7280', fontSize: 11 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={70}
-                    interval="preserveStartEnd"
+                    angle={0}
+                    textAnchor="middle"
+                    height={50}
+                    interval={getXAxisInterval()}
+                    tickMargin={10}
+                    key={`xaxis-${timeRange}`}
                   />
                   <YAxis 
                     tick={{ fill: '#6b7280', fontSize: 11 }}
-                    label={{ value: 'Number of Signups', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
+                    tickFormatter={(value: number) => {
+                      if (value === undefined || value === null || isNaN(value)) return '0%'
+                      return `${Number(value).toFixed(1)}%`
+                    }}
+                    domain={[0, 'auto']}
+                    allowDecimals={true}
+                    tickCount={6}
+                    width={50}
+                    label={{ value: 'Signups per Tournament (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
                   />
                   <Tooltip 
-                    formatter={(value: any, name: string) => [`${value} signups`, name]}
+                    formatter={(value: any, name: string) => [`${value}%`, 'Signups per Tournament']}
                     labelFormatter={(label) => `Period: ${label}`}
                     contentStyle={{ 
                       backgroundColor: 'white', 
@@ -585,42 +625,15 @@ export function AnalyticsDashboard() {
                       padding: '8px 12px'
                     }}
                   />
-                  <Legend 
-                    wrapperStyle={{ paddingTop: '20px' }}
-                    iconType="line"
-                    formatter={(value) => value.replace('_', ' ')}
+                  <Line
+                    type="monotone"
+                    dataKey="signups"
+                    stroke={COLORS.secondary}
+                    strokeWidth={2.5}
+                    dot={{ fill: COLORS.secondary, r: 4 }}
+                    activeDot={{ r: 6 }}
+                    name="Signups per Tournament"
                   />
-                  {(() => {
-                    // Get all unique format names from the timeline data
-                    const formatKeys = new Set<string>()
-                    analytics.formatSignupsOverTime.forEach(period => {
-                      Object.keys(period).forEach(key => {
-                        if (key !== 'period') {
-                          formatKeys.add(key)
-                        }
-                      })
-                    })
-                    
-                    const colors = [COLORS.secondary, '#8b5cf6', COLORS.info, COLORS.warning, COLORS.success, '#06b6d4', '#f97316']
-                    
-                    return Array.from(formatKeys).map((formatKey, index) => {
-                      const color = colors[index % colors.length]
-                      
-                      return (
-                        <Line
-                          key={formatKey}
-                          type="monotone"
-                          dataKey={formatKey}
-                          stroke={color}
-                          strokeWidth={2.5}
-                          dot={{ fill: color, r: 4 }}
-                          activeDot={{ r: 6 }}
-                          name={formatKey}
-                          connectNulls={false}
-                        />
-                      )
-                    })
-                  })()}
                 </LineChart>
               </ResponsiveContainer>
             </div>
