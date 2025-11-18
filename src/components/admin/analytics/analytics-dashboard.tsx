@@ -18,7 +18,7 @@ import {
   Target,
   Calendar
 } from 'lucide-react'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell, LineChart, Line } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts'
 
 interface AnalyticsData {
   revenue: {
@@ -178,8 +178,8 @@ export function AnalyticsDashboard() {
           })
         }
 
-        // Tournament formats with signups
-        const formatStats = tournaments.reduce((acc, t) => {
+        // Tournament formats with signups (filtered by time range)
+        const formatStats = filteredTournaments.reduce((acc, t) => {
           if (!acc[t.format]) {
             acc[t.format] = { count: 0, signups: 0 }
           }
@@ -187,22 +187,22 @@ export function AnalyticsDashboard() {
           return acc
         }, {} as Record<string, { count: number; signups: number }>)
 
-        // Count signups per format
-        registrations.forEach(reg => {
-          const tournament = tournaments.find(t => t.id === reg.tournament_id)
+        // Count signups per format (only for filtered registrations)
+        filteredRegistrations.forEach(reg => {
+          const tournament = filteredTournaments.find(t => t.id === reg.tournament_id)
           if (tournament && formatStats[tournament.format]) {
             formatStats[tournament.format].signups++
           }
         })
 
-        const totalTournaments = tournaments.length
+        const totalFilteredTournaments = filteredTournaments.length
         const tournamentFormats = Object.entries(formatStats).map(([format, data]) => {
           const stats = data as { count: number; signups: number }
           return {
             format: format.replace('_', ' ').toUpperCase(),
             count: stats.count,
             signups: stats.signups,
-            percentage: Math.round((stats.count / totalTournaments) * 100)
+            percentage: totalFilteredTournaments > 0 ? Math.round((stats.count / totalFilteredTournaments) * 100) : 0
           }
         })
 
@@ -433,34 +433,59 @@ export function AnalyticsDashboard() {
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={analytics.monthlyRevenue}>
+                <AreaChart data={analytics.monthlyRevenue} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS.success} stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor={COLORS.success} stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
                     dataKey="period" 
-                    tick={{ fill: '#6b7280', fontSize: 12 }}
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={70}
+                    interval="preserveStartEnd"
                   />
-                  <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} />
+                  <YAxis 
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
+                    tickFormatter={(value) => {
+                      if (value >= 1000000) return `KES ${(value / 1000000).toFixed(1)}M`
+                      if (value >= 1000) return `KES ${(value / 1000).toFixed(1)}K`
+                      return `KES ${value}`
+                    }}
+                    label={{ value: 'Revenue (KES)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
+                  />
                   <Tooltip 
-                    formatter={(value, name) => [
-                      name === 'revenue' ? formatCurrency(Number(value)) : value,
-                      name === 'revenue' ? 'Revenue' : name === 'tournaments' ? 'Tournaments' : 'Signups'
-                    ]}
+                    formatter={(value: any, name: string) => {
+                      if (name === 'revenue') {
+                        return [formatCurrency(Number(value)), 'Revenue']
+                      }
+                      return [value, name === 'tournaments' ? 'Tournaments' : 'Signups']
+                    }}
+                    labelFormatter={(label) => `Period: ${label}`}
                     contentStyle={{ 
                       backgroundColor: 'white', 
                       border: '1px solid #e5e7eb',
-                      borderRadius: '8px'
+                      borderRadius: '8px',
+                      padding: '8px 12px'
                     }}
                   />
                   <Area 
                     type="monotone" 
                     dataKey="revenue" 
                     stroke={COLORS.success}
-                    fill={COLORS.success}
-                    fillOpacity={0.3}
-                    strokeWidth={2}
+                    fill="url(#colorRevenue)"
+                    strokeWidth={2.5}
+                    name="Revenue"
                   />
                 </AreaChart>
               </ResponsiveContainer>
+            </div>
+            <div className="mt-4 text-xs text-gray-500 text-center">
+              Showing revenue over {timeRange === '7d' ? '7 days' : timeRange === '14d' ? '14 days' : timeRange === '30d' ? '30 days' : timeRange === '90d' ? '3 months' : 'all time'}
             </div>
           </CardContent>
         </Card>
@@ -469,42 +494,54 @@ export function AnalyticsDashboard() {
         <Card className="glass-card border-none shadow-premium">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <PieChart className="h-5 w-5" style={{ color: COLORS.info }} />
+              <BarChart3 className="h-5 w-5" style={{ color: COLORS.info }} />
               New Player Signups by Format
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={analytics.tournamentFormats}>
+                <BarChart 
+                  data={analytics.tournamentFormats.sort((a, b) => b.signups - a.signups)} 
+                  margin={{ top: 10, right: 10, left: 0, bottom: 60 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
                     dataKey="format" 
-                    tick={{ fill: '#6b7280', fontSize: 12 }}
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
                     angle={-45}
                     textAnchor="end"
-                    height={60}
+                    height={80}
+                    interval={0}
                   />
-                  <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} />
+                  <YAxis 
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
+                    label={{ value: 'Number of Signups', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
+                  />
                   <Tooltip 
+                    formatter={(value: any) => [`${value} signups`, 'New Player Signups']}
+                    labelFormatter={(label) => `Format: ${label}`}
                     contentStyle={{ 
                       backgroundColor: 'white', 
                       border: '1px solid #e5e7eb',
-                      borderRadius: '8px'
+                      borderRadius: '8px',
+                      padding: '8px 12px'
                     }}
                   />
-                  <Area 
-                    type="monotone" 
+                  <Bar 
                     dataKey="signups" 
-                    stroke={COLORS.secondary}
                     fill={COLORS.secondary}
-                    fillOpacity={0.3}
-                    strokeWidth={3}
+                    radius={[8, 8, 0, 0]}
                     name="New Player Signups"
                   />
-                </AreaChart>
+                </BarChart>
               </ResponsiveContainer>
             </div>
+            {analytics.tournamentFormats.length === 0 && (
+              <div className="mt-4 text-xs text-gray-500 text-center">
+                No signup data available for the selected time period
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Trophy, Users, Calendar, DollarSign, Zap } from 'lucide-react'
 import { format } from 'date-fns'
 import { Tables } from '@/lib/database.types'
+import { ShareButton } from './share-button'
 
 interface TournamentHeaderProps {
   tournament: Tables<'tournaments'>
@@ -27,9 +28,17 @@ export function TournamentHeader({ tournament, isRegistered, participantCount }:
     <div className="glass-card p-8 space-y-6">
       <div className="flex items-start justify-between">
         <div className="space-y-3 flex-1">
-          <div className="flex items-center gap-3">
-            <Trophy className="w-8 h-8 text-[#FFB800]" />
-            <h1 className="text-3xl font-bold">{tournament.name}</h1>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Trophy className="w-8 h-8 text-[#FFB800]" />
+              <h1 className="text-3xl font-bold">{tournament.name}</h1>
+            </div>
+            <ShareButton 
+              tournamentId={tournament.id} 
+              tournamentName={tournament.name}
+              variant="outline"
+              size="sm"
+            />
           </div>
           
           {tournament.description && (
