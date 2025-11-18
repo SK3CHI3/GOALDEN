@@ -46,6 +46,7 @@ interface AnalyticsData {
   }
   monthlyRevenue: Array<{ period: string; revenue: number; tournaments: number; signups?: number }>
   tournamentFormats: Array<{ format: string; count: number; percentage: number; signups: number }>
+  formatSignupsOverTime: Array<{ period: string; [key: string]: string | number }>
   playerActivity: Array<{ day: string; active: number; matches: number }>
 }
 
@@ -178,7 +179,7 @@ export function AnalyticsDashboard() {
           })
         }
 
-        // Tournament formats with signups (filtered by time range)
+        // Tournament formats with signups (filtered by time range) - for summary stats
         const formatStats = filteredTournaments.reduce((acc, t) => {
           if (!acc[t.format]) {
             acc[t.format] = { count: 0, signups: 0 }
@@ -205,6 +206,53 @@ export function AnalyticsDashboard() {
             percentage: totalFilteredTournaments > 0 ? Math.round((stats.count / totalFilteredTournaments) * 100) : 0
           }
         })
+
+        // Generate timeline data for signups by format (like revenue trend)
+        const formatSignupsTimeline = []
+        const formatDataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 12
+        const isFormatMonthly = timeRange === '90d' || timeRange === 'all'
+        
+        // Get all unique formats from all tournaments (not just filtered) to show all possible formats
+        const allFormats = Array.from(new Set(tournaments.map(t => t.format)))
+        
+        for (let i = formatDataPoints - 1; i >= 0; i--) {
+          const date = new Date()
+          if (isFormatMonthly) {
+            date.setMonth(date.getMonth() - i)
+          } else {
+            date.setDate(date.getDate() - i)
+          }
+          
+          const label = isFormatMonthly 
+            ? date.toLocaleDateString('en-US', { month: 'short' })
+            : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          
+          const periodData: { period: string; [key: string]: string | number } = { period: label }
+          
+          // Count signups per format for this period
+          allFormats.forEach(format => {
+            const formatName = format.replace('_', ' ').toUpperCase()
+            
+            // Get registrations for this format in this time period
+            const periodRegistrations = registrations.filter(r => {
+              const registered = new Date(r.registered_at || '')
+              const tournament = tournaments.find(t => t.id === r.tournament_id && t.format === format)
+              
+              if (!tournament) return false
+              
+              // Check if registration is within the time period
+              if (isFormatMonthly) {
+                return registered.getMonth() === date.getMonth() && registered.getFullYear() === date.getFullYear()
+              } else {
+                return registered.toDateString() === date.toDateString()
+              }
+            })
+            
+            periodData[formatName] = periodRegistrations.length
+          })
+          
+          formatSignupsTimeline.push(periodData)
+        }
 
         // Player activity with real data (last 14 days)
         const activityData = []
@@ -258,6 +306,7 @@ export function AnalyticsDashboard() {
           },
           monthlyRevenue: timelineData,
           tournamentFormats,
+          formatSignupsOverTime: formatSignupsTimeline,
           playerActivity: activityData
         })
 
@@ -492,35 +541,46 @@ export function AnalyticsDashboard() {
 
         {/* Tournament Formats with Signups */}
         <Card className="glass-card border-none shadow-premium">
-          <CardHeader>
+          <CardHeader className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" style={{ color: COLORS.info }} />
+              <TrendingUp className="h-5 w-5" style={{ color: COLORS.secondary }} />
               New Player Signups by Format
             </CardTitle>
+            <Calendar className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart 
-                  data={analytics.tournamentFormats.sort((a, b) => b.signups - a.signups)} 
-                  margin={{ top: 10, right: 10, left: 0, bottom: 60 }}
+                <LineChart 
+                  data={analytics.formatSignupsOverTime} 
+                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
                 >
+                  <defs>
+                    <linearGradient id="colorSingleElimination" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS.secondary} stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor={COLORS.secondary} stopOpacity={0.1}/>
+                    </linearGradient>
+                    <linearGradient id="colorDoubleElimination" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
-                    dataKey="format" 
+                    dataKey="period" 
                     tick={{ fill: '#6b7280', fontSize: 11 }}
                     angle={-45}
                     textAnchor="end"
-                    height={80}
-                    interval={0}
+                    height={70}
+                    interval="preserveStartEnd"
                   />
                   <YAxis 
                     tick={{ fill: '#6b7280', fontSize: 11 }}
                     label={{ value: 'Number of Signups', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
                   />
                   <Tooltip 
-                    formatter={(value: any) => [`${value} signups`, 'New Player Signups']}
-                    labelFormatter={(label) => `Format: ${label}`}
+                    formatter={(value: any, name: string) => [`${value} signups`, name]}
+                    labelFormatter={(label) => `Period: ${label}`}
                     contentStyle={{ 
                       backgroundColor: 'white', 
                       border: '1px solid #e5e7eb',
@@ -528,17 +588,50 @@ export function AnalyticsDashboard() {
                       padding: '8px 12px'
                     }}
                   />
-                  <Bar 
-                    dataKey="signups" 
-                    fill={COLORS.secondary}
-                    radius={[8, 8, 0, 0]}
-                    name="New Player Signups"
+                  <Legend 
+                    wrapperStyle={{ paddingTop: '20px' }}
+                    iconType="line"
+                    formatter={(value) => value.replace('_', ' ')}
                   />
-                </BarChart>
+                  {(() => {
+                    // Get all unique format names from the timeline data
+                    const formatKeys = new Set<string>()
+                    analytics.formatSignupsOverTime.forEach(period => {
+                      Object.keys(period).forEach(key => {
+                        if (key !== 'period') {
+                          formatKeys.add(key)
+                        }
+                      })
+                    })
+                    
+                    const colors = [COLORS.secondary, '#8b5cf6', COLORS.info, COLORS.warning, COLORS.success, '#06b6d4', '#f97316']
+                    
+                    return Array.from(formatKeys).map((formatKey, index) => {
+                      const color = colors[index % colors.length]
+                      
+                      return (
+                        <Line
+                          key={formatKey}
+                          type="monotone"
+                          dataKey={formatKey}
+                          stroke={color}
+                          strokeWidth={2.5}
+                          dot={{ fill: color, r: 4 }}
+                          activeDot={{ r: 6 }}
+                          name={formatKey}
+                          connectNulls={false}
+                        />
+                      )
+                    })
+                  })()}
+                </LineChart>
               </ResponsiveContainer>
             </div>
-            {analytics.tournamentFormats.length === 0 && (
-              <div className="mt-4 text-xs text-gray-500 text-center">
+            <div className="mt-4 text-xs text-gray-500 text-center">
+              Showing signups over {timeRange === '7d' ? '7 days' : timeRange === '14d' ? '14 days' : timeRange === '30d' ? '30 days' : timeRange === '90d' ? '3 months' : 'all time'}
+            </div>
+            {analytics.formatSignupsOverTime.length === 0 && (
+              <div className="mt-2 text-xs text-gray-500 text-center">
                 No signup data available for the selected time period
               </div>
             )}
