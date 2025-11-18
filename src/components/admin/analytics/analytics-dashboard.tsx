@@ -533,9 +533,6 @@ export function AnalyticsDashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-4 text-xs text-gray-500 text-center">
-              Showing revenue over {timeRange === '7d' ? '7 days' : timeRange === '14d' ? '14 days' : timeRange === '30d' ? '30 days' : timeRange === '90d' ? '3 months' : 'all time'}
-            </div>
           </CardContent>
         </Card>
 
@@ -627,11 +624,8 @@ export function AnalyticsDashboard() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-4 text-xs text-gray-500 text-center">
-              Showing signups over {timeRange === '7d' ? '7 days' : timeRange === '14d' ? '14 days' : timeRange === '30d' ? '30 days' : timeRange === '90d' ? '3 months' : 'all time'}
-            </div>
             {analytics.formatSignupsOverTime.length === 0 && (
-              <div className="mt-2 text-xs text-gray-500 text-center">
+              <div className="mt-4 text-xs text-gray-500 text-center">
                 No signup data available for the selected time period
               </div>
             )}
