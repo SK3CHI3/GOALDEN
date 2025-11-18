@@ -8,6 +8,56 @@ import { TournamentChat } from '@/components/tournaments/tournament-chat'
 import { TournamentDetailClient } from '@/components/tournaments/tournament-detail-client'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const supabase = await createClient()
+  const { id } = await params
+
+  const { data: tournament } = await supabase
+    .from('tournaments')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (!tournament) {
+    return {
+      title: 'Tournament Not Found',
+      description: 'The tournament you are looking for does not exist.'
+    }
+  }
+
+  const url = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://goalden.vercel.app'}/dashboard/tournaments/${id}`
+  const posterUrl = tournament.poster_url || '/images/GOALDEN LOGO/GOALDEN_logo.png'
+  const fullPosterUrl = posterUrl.startsWith('http') ? posterUrl : `${process.env.NEXT_PUBLIC_SITE_URL || 'https://goalden.vercel.app'}${posterUrl}`
+
+  return {
+    title: `${tournament.name} - GOALDEN Tournament`,
+    description: tournament.description || `Join ${tournament.name} on GOALDEN. Entry fee: KES ${tournament.entry_fee}. Prize pool: KES ${tournament.prize_pool || 0}`,
+    openGraph: {
+      title: `${tournament.name} - GOALDEN Tournament`,
+      description: tournament.description || `Join ${tournament.name} on GOALDEN. Entry fee: KES ${tournament.entry_fee}. Prize pool: KES ${tournament.prize_pool || 0}`,
+      url: url,
+      siteName: 'GOALDEN',
+      images: [
+        {
+          url: fullPosterUrl,
+          width: 1200,
+          height: 630,
+          alt: tournament.name,
+        },
+      ],
+      locale: 'en_US',
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${tournament.name} - GOALDEN Tournament`,
+      description: tournament.description || `Join ${tournament.name} on GOALDEN`,
+      images: [fullPosterUrl],
+    },
+  }
+}
 
 export default async function TournamentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser()
