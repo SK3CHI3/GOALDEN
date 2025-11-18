@@ -20,6 +20,15 @@ import {
   Plus
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { 
+  getAnnouncements, 
+  createAnnouncement, 
+  getAdminMessages, 
+  getAdminMessage,
+  updateMessageStatus,
+  replyToMessage,
+  getCommunicationStats 
+} from '@/app/actions/communication'
 
 interface Announcement {
   id: string
@@ -63,6 +72,7 @@ export function AdminCommunication() {
   const [activeTab, setActiveTab] = useState('announcements')
   const [showCompose, setShowCompose] = useState(false)
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
+  const [replyText, setReplyText] = useState('')
 
   // Compose form state
   const [composeData, setComposeData] = useState({
@@ -76,70 +86,23 @@ export function AdminCommunication() {
   useEffect(() => {
     async function loadCommunicationData() {
       try {
-        // Mock data for now - in real implementation, these would come from database
-        const mockAnnouncements: Announcement[] = [
-          {
-            id: '1',
-            title: 'New Tournament Format Available',
-            content: 'We\'re excited to announce the launch of double elimination tournaments!',
-            type: 'tournament',
-            target: 'all',
-            created_at: new Date().toISOString(),
-            sent_at: new Date(Date.now() - 86400000).toISOString(),
-            status: 'sent',
-            recipients: 150,
-            opened: 120,
-            clicked: 45
-          },
-          {
-            id: '2',
-            title: 'Scheduled Maintenance',
-            content: 'Our platform will be under maintenance from 2 AM to 4 AM tomorrow.',
-            type: 'maintenance',
-            target: 'all',
-            created_at: new Date(Date.now() - 172800000).toISOString(),
-            sent_at: new Date(Date.now() - 172800000).toISOString(),
-            status: 'sent',
-            recipients: 150,
-            opened: 95,
-            clicked: 12
-          }
-        ]
+        // Load announcements
+        const announcementsResult = await getAnnouncements()
+        if (announcementsResult.data) {
+          setAnnouncements(announcementsResult.data as Announcement[])
+        }
 
-        const mockMessages: Message[] = [
-          {
-            id: '1',
-            player_name: 'John Doe',
-            player_email: 'john@example.com',
-            subject: 'Prize Payment Issue',
-            content: 'I haven\'t received my prize payment from last week\'s tournament.',
-            status: 'unread',
-            created_at: new Date().toISOString(),
-            priority: 'high'
-          },
-          {
-            id: '2',
-            player_name: 'Jane Smith',
-            player_email: 'jane@example.com',
-            subject: 'Tournament Registration',
-            content: 'I\'m having trouble registering for the upcoming tournament.',
-            status: 'read',
-            created_at: new Date(Date.now() - 3600000).toISOString(),
-            priority: 'medium'
-          }
-        ]
+        // Load messages
+        const messagesResult = await getAdminMessages()
+        if (messagesResult.data) {
+          setMessages(messagesResult.data as Message[])
+        }
 
-        setAnnouncements(mockAnnouncements)
-        setMessages(mockMessages)
-
-        setStats({
-          totalAnnouncements: mockAnnouncements.length,
-          totalMessages: mockMessages.length,
-          unreadMessages: mockMessages.filter(m => m.status === 'unread').length,
-          responseRate: 85,
-          avgResponseTime: 2.5,
-          engagementRate: 78
-        })
+        // Load stats
+        const statsResult = await getCommunicationStats()
+        if (statsResult.data) {
+          setStats(statsResult.data)
+        }
 
       } catch (error) {
         console.error('Error loading communication data:', error)
@@ -152,10 +115,39 @@ export function AdminCommunication() {
   }, [])
 
   const handleSendAnnouncement = async () => {
-    // Implement announcement sending logic
-    console.log('Sending announcement:', composeData)
-    setShowCompose(false)
-    setComposeData({ title: '', content: '', type: 'general', target: 'all', scheduledAt: '' })
+    try {
+      const result = await createAnnouncement({
+        title: composeData.title,
+        content: composeData.content,
+        type: composeData.type as 'general' | 'tournament' | 'maintenance' | 'urgent',
+        target: composeData.target as 'all' | 'active' | 'tournament' | 'specific',
+        scheduled_at: composeData.scheduledAt || undefined
+      })
+
+      if (result.error) {
+        console.error('Error creating announcement:', result.error)
+        alert('Failed to create announcement: ' + result.error)
+        return
+      }
+
+      // Reload announcements
+      const announcementsResult = await getAnnouncements()
+      if (announcementsResult.data) {
+        setAnnouncements(announcementsResult.data as Announcement[])
+      }
+
+      // Reload stats
+      const statsResult = await getCommunicationStats()
+      if (statsResult.data) {
+        setStats(statsResult.data)
+      }
+
+      setShowCompose(false)
+      setComposeData({ title: '', content: '', type: 'general', target: 'all', scheduledAt: '' })
+    } catch (error) {
+      console.error('Error sending announcement:', error)
+      alert('Failed to send announcement')
+    }
   }
 
 
@@ -377,7 +369,17 @@ export function AdminCommunication() {
                   className={`p-4 border rounded-lg hover:shadow-md transition-all cursor-pointer ${
                     message.status === 'unread' ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
                   }`}
-                  onClick={() => setSelectedMessage(message)}
+                  onClick={async () => {
+                    // Mark as read when opening
+                    if (message.status === 'unread') {
+                      await updateMessageStatus(message.id, 'read')
+                      // Update local state
+                      setMessages(messages.map(m => 
+                        m.id === message.id ? { ...m, status: 'read' } : m
+                      ))
+                    }
+                    setSelectedMessage(message)
+                  }}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -515,13 +517,40 @@ export function AdminCommunication() {
             <div>
               <label className="text-sm font-medium text-gray-700">Reply</label>
               <Textarea
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
                 placeholder="Type your reply..."
                 rows={4}
               />
             </div>
 
             <div className="flex gap-3">
-              <Button className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+              <Button 
+                onClick={async () => {
+                  if (!replyText.trim()) {
+                    alert('Please enter a reply message')
+                    return
+                  }
+                  try {
+                    const result = await replyToMessage(selectedMessage.id, replyText)
+                    if (result.error) {
+                      alert('Failed to send reply: ' + result.error)
+                      return
+                    }
+                    // Update message status
+                    setMessages(messages.map(m => 
+                      m.id === selectedMessage.id ? { ...m, status: 'replied' } : m
+                    ))
+                    setSelectedMessage({ ...selectedMessage, status: 'replied' })
+                    setReplyText('')
+                    alert('Reply sent successfully!')
+                  } catch (error) {
+                    console.error('Error sending reply:', error)
+                    alert('Failed to send reply')
+                  }
+                }}
+                className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white"
+              >
                 <Send className="h-4 w-4 mr-2" />
                 Send Reply
               </Button>

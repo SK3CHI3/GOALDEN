@@ -48,6 +48,7 @@ interface AnalyticsData {
   tournamentFormats: Array<{ format: string; count: number; percentage: number; signups: number }>
   formatSignupsOverTime: Array<{ period: string; [key: string]: string | number }>
   playerActivity: Array<{ day: string; active: number; matches: number }>
+  platformGrowth: Array<{ period: string; users: number; tournaments: number; revenue: number }>
 }
 
 type TimeRange = '7d' | '14d' | '30d' | '90d' | 'all'
@@ -72,7 +73,7 @@ export function AnalyticsDashboard() {
       case '7d': return 0 // Show all labels for 7 days
       case '14d': return 1 // Show every other day for 14 days
       case '30d': return 4 // Show every 4-5 days for 30 days (cleaner)
-      case '90d': return 6 // Show every 6-7 days for 90 days (weekly-ish)
+      case '90d': return 0 // Show all bi-weekly labels for 90 days (6 periods total)
       case 'all': return 0 // Show all months for all time
       default: return 0
     }
@@ -151,54 +152,88 @@ export function AnalyticsDashboard() {
 
         // Generate dynamic timeline data based on time range
         const timelineData = []
-        const dataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 12
         const isMonthly = timeRange === 'all'
         const is90Days = timeRange === '90d'
         
-        for (let i = dataPoints - 1; i >= 0; i--) {
-          const date = new Date()
-          if (isMonthly) {
-            date.setMonth(date.getMonth() - i)
-          } else if (is90Days) {
-            date.setDate(date.getDate() - i)
-          } else {
-            date.setDate(date.getDate() - i)
+        if (is90Days) {
+          // For 90 days, aggregate into bi-weekly chunks (6 periods)
+          const biWeeks = 6
+          for (let i = biWeeks - 1; i >= 0; i--) {
+            const periodStart = new Date()
+            periodStart.setDate(periodStart.getDate() - (i * 14))
+            const dayOfWeek = periodStart.getDay()
+            const diff = periodStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+            periodStart.setDate(diff)
+            periodStart.setHours(0, 0, 0, 0)
+            const periodEnd = new Date(periodStart)
+            periodEnd.setDate(periodEnd.getDate() + 13)
+            periodEnd.setHours(23, 59, 59, 999)
+            
+            const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+            
+            // Count tournaments created in this bi-weekly period
+            const periodTournaments = filteredTournaments.filter(t => {
+              const created = new Date(t.created_at || '')
+              return created >= periodStart && created <= periodEnd
+            })
+            
+            // Count registrations in this bi-weekly period
+            const periodRegistrations = filteredRegistrations.filter(r => {
+              const registered = new Date(r.registered_at || '')
+              return registered >= periodStart && registered <= periodEnd
+            })
+            
+            timelineData.push({
+              period: label,
+              revenue: periodTournaments.reduce((sum, t) => sum + (t.prize_pool || 0), 0),
+              tournaments: periodTournaments.length,
+              signups: periodRegistrations.length
+            })
           }
+        } else {
+          // For other time ranges, use daily/monthly data
+          const dataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : 12
           
-          let label: string
-          if (isMonthly) {
-            label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-          } else if (is90Days) {
-            // For 90 days, show day and month (e.g., "Jan 15")
-            label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          } else {
-            label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          for (let i = dataPoints - 1; i >= 0; i--) {
+            const date = new Date()
+            if (isMonthly) {
+              date.setMonth(date.getMonth() - i)
+            } else {
+              date.setDate(date.getDate() - i)
+            }
+            
+            let label: string
+            if (isMonthly) {
+              label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+            } else {
+              label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+            }
+            
+            const periodTournaments = filteredTournaments.filter(t => {
+              const created = new Date(t.created_at || '')
+              if (isMonthly) {
+                return created.getMonth() === date.getMonth() && created.getFullYear() === date.getFullYear()
+              } else {
+                return created.toDateString() === date.toDateString()
+              }
+            })
+            
+            const periodRegistrations = filteredRegistrations.filter(r => {
+              const registered = new Date(r.registered_at || '')
+              if (isMonthly) {
+                return registered.getMonth() === date.getMonth() && registered.getFullYear() === date.getFullYear()
+              } else {
+                return registered.toDateString() === date.toDateString()
+              }
+            })
+            
+            timelineData.push({
+              period: label,
+              revenue: periodTournaments.reduce((sum, t) => sum + (t.prize_pool || 0), 0),
+              tournaments: periodTournaments.length,
+              signups: periodRegistrations.length
+            })
           }
-          
-          const periodTournaments = filteredTournaments.filter(t => {
-            const created = new Date(t.created_at || '')
-            if (isMonthly) {
-              return created.getMonth() === date.getMonth() && created.getFullYear() === date.getFullYear()
-            } else {
-              return created.toDateString() === date.toDateString()
-            }
-          })
-          
-          const periodRegistrations = filteredRegistrations.filter(r => {
-            const registered = new Date(r.registered_at || '')
-            if (isMonthly) {
-              return registered.getMonth() === date.getMonth() && registered.getFullYear() === date.getFullYear()
-            } else {
-              return registered.toDateString() === date.toDateString()
-            }
-          })
-          
-          timelineData.push({
-            period: label,
-            revenue: periodTournaments.reduce((sum, t) => sum + (t.prize_pool || 0), 0),
-            tournaments: periodTournaments.length,
-            signups: periodRegistrations.length
-          })
         }
 
         // Tournament formats with signups (filtered by time range) - for summary stats
@@ -231,61 +266,98 @@ export function AnalyticsDashboard() {
 
         // Generate timeline data for total signups (like revenue trend)
         const formatSignupsTimeline = []
-        const formatDataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 12
         const isFormatMonthly = timeRange === 'all'
         const isFormat90Days = timeRange === '90d'
         
-        for (let i = formatDataPoints - 1; i >= 0; i--) {
-          const date = new Date()
-          if (isFormatMonthly) {
-            date.setMonth(date.getMonth() - i)
-          } else if (isFormat90Days) {
-            date.setDate(date.getDate() - i)
-          } else {
-            date.setDate(date.getDate() - i)
-          }
-          
-          let label: string
-          if (isFormatMonthly) {
-            label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-          } else if (isFormat90Days) {
-            // For 90 days, show day and month (e.g., "Jan 15")
-            label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          } else {
-            label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-          }
-          
-          // Count total signups for this period
-          const periodRegistrations = registrations.filter(r => {
-            const registered = new Date(r.registered_at || '')
+        if (isFormat90Days) {
+          // For 90 days, aggregate into bi-weekly chunks (6-7 periods for smoother visualization)
+          const biWeeks = 6
+          for (let i = biWeeks - 1; i >= 0; i--) {
+            const periodStart = new Date()
+            periodStart.setDate(periodStart.getDate() - (i * 14))
+            // Get Monday of the week
+            const dayOfWeek = periodStart.getDay()
+            const diff = periodStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+            periodStart.setDate(diff)
             
-            // Check if registration is within the time period
+            const periodEnd = new Date(periodStart)
+            periodEnd.setDate(periodEnd.getDate() + 13) // 14 days total (0-13 = 14 days)
+            
+            const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+            
+            // Count total signups for this bi-weekly period
+            const periodRegistrations = registrations.filter(r => {
+              const registered = new Date(r.registered_at || '')
+              return registered >= periodStart && registered <= periodEnd
+            })
+            
+            // Count tournaments created in this bi-weekly period
+            const periodTournaments = tournaments.filter(t => {
+              const created = new Date(t.created_at || '')
+              return created >= periodStart && created <= periodEnd
+            })
+            
+            // Calculate percentage: signups per tournament (average signups per tournament)
+            const signupPercentage = periodTournaments.length > 0 
+              ? (periodRegistrations.length / periodTournaments.length) * 100 
+              : 0
+            
+            formatSignupsTimeline.push({
+              period: label,
+              signups: Math.round(signupPercentage * 10) / 10 // Round to 1 decimal
+            })
+          }
+        } else {
+          // For other time ranges, use daily/monthly data
+          const formatDataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : 12
+          
+          for (let i = formatDataPoints - 1; i >= 0; i--) {
+            const date = new Date()
             if (isFormatMonthly) {
-              return registered.getMonth() === date.getMonth() && registered.getFullYear() === date.getFullYear()
+              date.setMonth(date.getMonth() - i)
             } else {
-              return registered.toDateString() === date.toDateString()
+              date.setDate(date.getDate() - i)
             }
-          })
-          
-          // Count tournaments created in this period
-          const periodTournaments = tournaments.filter(t => {
-            const created = new Date(t.created_at || '')
+            
+            let label: string
             if (isFormatMonthly) {
-              return created.getMonth() === date.getMonth() && created.getFullYear() === date.getFullYear()
+              label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
             } else {
-              return created.toDateString() === date.toDateString()
+              label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
             }
-          })
-          
-          // Calculate percentage: signups per tournament (average signups per tournament)
-          const signupPercentage = periodTournaments.length > 0 
-            ? (periodRegistrations.length / periodTournaments.length) * 100 
-            : 0
-          
-          formatSignupsTimeline.push({
-            period: label,
-            signups: Math.round(signupPercentage * 10) / 10 // Round to 1 decimal
-          })
+            
+            // Count total signups for this period
+            const periodRegistrations = registrations.filter(r => {
+              const registered = new Date(r.registered_at || '')
+              
+              // Check if registration is within the time period
+              if (isFormatMonthly) {
+                return registered.getMonth() === date.getMonth() && registered.getFullYear() === date.getFullYear()
+              } else {
+                return registered.toDateString() === date.toDateString()
+              }
+            })
+            
+            // Count tournaments created in this period
+            const periodTournaments = tournaments.filter(t => {
+              const created = new Date(t.created_at || '')
+              if (isFormatMonthly) {
+                return created.getMonth() === date.getMonth() && created.getFullYear() === date.getFullYear()
+              } else {
+                return created.toDateString() === date.toDateString()
+              }
+            })
+            
+            // Calculate percentage: signups per tournament (average signups per tournament)
+            const signupPercentage = periodTournaments.length > 0 
+              ? (periodRegistrations.length / periodTournaments.length) * 100 
+              : 0
+            
+            formatSignupsTimeline.push({
+              period: label,
+              signups: Math.round(signupPercentage * 10) / 10 // Round to 1 decimal
+            })
+          }
         }
 
         // Player activity with real data (last 14 days)
@@ -312,6 +384,114 @@ export function AnalyticsDashboard() {
             active: activePlayerIds.size,
             matches: dayMatches.length
           })
+        }
+
+        // Generate Platform Growth data (new users, tournaments, revenue per period)
+        const platformGrowthData = []
+        const isGrowthMonthly = timeRange === 'all'
+        const isGrowth90Days = timeRange === '90d'
+        
+        if (isGrowth90Days) {
+          // For 90 days, use bi-weekly chunks (6 periods)
+          const biWeeks = 6
+          for (let i = biWeeks - 1; i >= 0; i--) {
+            const periodStart = new Date()
+            periodStart.setDate(periodStart.getDate() - (i * 14))
+            const dayOfWeek = periodStart.getDay()
+            const diff = periodStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+            periodStart.setDate(diff)
+            periodStart.setHours(0, 0, 0, 0)
+            const periodEnd = new Date(periodStart)
+            periodEnd.setDate(periodEnd.getDate() + 13)
+            // Set time to end of day
+            periodEnd.setHours(23, 59, 59, 999)
+            
+            const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+            
+            // Count NEW users registered in this period only
+            const newUsers = players.filter(p => {
+              const created = new Date(p.created_at || '')
+              return created >= periodStart && created <= periodEnd
+            }).length
+            
+            // Count NEW tournaments created in this period only
+            const newTournaments = tournaments.filter(t => {
+              const created = new Date(t.created_at || '')
+              return created >= periodStart && created <= periodEnd
+            }).length
+            
+            // Calculate NEW revenue from tournaments created in this period
+            const newRevenue = tournaments
+              .filter(t => {
+                const created = new Date(t.created_at || '')
+                return created >= periodStart && created <= periodEnd
+              })
+              .reduce((sum, t) => sum + (t.prize_pool || 0), 0)
+            
+            platformGrowthData.push({
+              period: label,
+              users: newUsers,
+              tournaments: newTournaments,
+              revenue: newRevenue
+            })
+          }
+        } else {
+          // For other time ranges
+          const growthDataPoints = timeRange === '7d' ? 7 : timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : 12
+          
+          for (let i = growthDataPoints - 1; i >= 0; i--) {
+            const date = new Date()
+            let periodStart: Date
+            let periodEnd: Date
+            
+            if (isGrowthMonthly) {
+              periodStart = new Date(date.getFullYear(), date.getMonth() - i, 1)
+              periodStart.setHours(0, 0, 0, 0)
+              periodEnd = new Date(date.getFullYear(), date.getMonth() - i + 1, 0)
+              periodEnd.setHours(23, 59, 59, 999)
+            } else {
+              periodStart = new Date(date)
+              periodStart.setDate(periodStart.getDate() - i)
+              periodStart.setHours(0, 0, 0, 0)
+              periodEnd = new Date(periodStart)
+              periodEnd.setDate(periodEnd.getDate() + 1)
+              periodEnd.setHours(23, 59, 59, 999)
+            }
+            
+            let label: string
+            if (isGrowthMonthly) {
+              label = periodStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+            } else {
+              label = periodStart.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+            }
+            
+            // Count NEW users registered in this period only
+            const newUsers = players.filter(p => {
+              const created = new Date(p.created_at || '')
+              return created >= periodStart && created <= periodEnd
+            }).length
+            
+            // Count NEW tournaments created in this period only
+            const newTournaments = tournaments.filter(t => {
+              const created = new Date(t.created_at || '')
+              return created >= periodStart && created <= periodEnd
+            }).length
+            
+            // Calculate NEW revenue from tournaments created in this period
+            const newRevenue = tournaments
+              .filter(t => {
+                const created = new Date(t.created_at || '')
+                return created >= periodStart && created <= periodEnd
+              })
+              .reduce((sum, t) => sum + (t.prize_pool || 0), 0)
+            
+            platformGrowthData.push({
+              period: label,
+              users: newUsers,
+              tournaments: newTournaments,
+              revenue: newRevenue
+            })
+          }
         }
 
         setAnalytics({
@@ -341,7 +521,8 @@ export function AnalyticsDashboard() {
           monthlyRevenue: timelineData,
           tournamentFormats,
           formatSignupsOverTime: formatSignupsTimeline,
-          playerActivity: activityData
+          playerActivity: activityData,
+          platformGrowth: platformGrowthData
         })
 
       } catch (error) {
@@ -630,9 +811,10 @@ export function AnalyticsDashboard() {
                     dataKey="signups"
                     stroke={COLORS.secondary}
                     strokeWidth={2.5}
-                    dot={{ fill: COLORS.secondary, r: 4 }}
-                    activeDot={{ r: 6 }}
+                    dot={{ fill: COLORS.secondary, r: 3, strokeWidth: 0 }}
+                    activeDot={{ r: 5, fill: COLORS.secondary }}
                     name="Signups per Tournament"
+                    connectNulls={false}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -645,6 +827,120 @@ export function AnalyticsDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Platform Growth */}
+      <Card className="glass-card border-none shadow-premium">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" style={{ color: COLORS.primary }} />
+            Platform Growth
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%" key={`growth-${timeRange}`}>
+              <LineChart 
+                data={analytics.platformGrowth || []} 
+                margin={{ top: 10, right: 30, left: 10, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.3} horizontal={true} vertical={false} />
+                <XAxis 
+                  dataKey="period" 
+                  tick={{ fill: '#6b7280', fontSize: 11 }}
+                  angle={0}
+                  textAnchor="middle"
+                  height={50}
+                  interval={getXAxisInterval()}
+                  tickMargin={10}
+                  key={`xaxis-growth-${timeRange}`}
+                />
+                <YAxis 
+                  yAxisId="left"
+                  tick={{ fill: '#6b7280', fontSize: 11 }}
+                  tickFormatter={(value) => {
+                    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`
+                    return value.toString()
+                  }}
+                  domain={[0, 'auto']}
+                  allowDecimals={false}
+                  tickCount={6}
+                  width={50}
+                  label={{ value: 'New Users & Tournaments', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
+                />
+                <YAxis 
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fill: '#6b7280', fontSize: 11 }}
+                  tickFormatter={(value) => {
+                    if (value >= 1000000) return `KES ${(value / 1000000).toFixed(1)}M`
+                    if (value >= 1000) return `KES ${(value / 1000).toFixed(1)}K`
+                    return `KES ${value}`
+                  }}
+                  domain={[0, 'auto']}
+                  allowDecimals={false}
+                  tickCount={6}
+                  width={50}
+                  label={{ value: 'New Revenue (KES)', angle: 90, position: 'insideRight', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: 12 } }}
+                />
+                <Tooltip 
+                  formatter={(value: any, name: string) => {
+                    if (name === 'users') return [value, 'New Users']
+                    if (name === 'tournaments') return [value, 'New Tournaments']
+                    if (name === 'revenue') return [formatCurrency(Number(value)), 'New Revenue']
+                    return [value, name]
+                  }}
+                  labelFormatter={(label) => `Period: ${label}`}
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    padding: '8px 12px'
+                  }}
+                />
+                <Legend />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="users"
+                  stroke={COLORS.info}
+                  strokeWidth={2.5}
+                  dot={{ fill: COLORS.info, r: 3, strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: COLORS.info }}
+                  name="New Users"
+                  connectNulls={false}
+                />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="tournaments"
+                  stroke={COLORS.warning}
+                  strokeWidth={2.5}
+                  dot={{ fill: COLORS.warning, r: 3, strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: COLORS.warning }}
+                  name="New Tournaments"
+                  connectNulls={false}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke={COLORS.success}
+                  strokeWidth={2.5}
+                  dot={{ fill: COLORS.success, r: 3, strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: COLORS.success }}
+                  name="New Revenue"
+                  connectNulls={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {analytics.platformGrowth.length === 0 && (
+            <div className="mt-4 text-xs text-gray-500 text-center">
+              No growth data available for the selected time period
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Player Activity */}
       <Card className="glass-card border-none shadow-premium">

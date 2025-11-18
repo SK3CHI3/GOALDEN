@@ -24,6 +24,12 @@ import {
   Monitor,
   Zap
 } from 'lucide-react'
+import { 
+  getSystemSettings, 
+  updateSystemSettings, 
+  getSystemHealth, 
+  getUserRoles 
+} from '@/app/actions/system'
 
 interface SystemSettings {
   platform: {
@@ -84,81 +90,23 @@ export function SystemAdministration() {
   useEffect(() => {
     async function loadSystemData() {
       try {
-        // Mock system data
-        const mockSettings: SystemSettings = {
-          platform: {
-            name: 'GOALDEN',
-            version: '1.2.0',
-            maintenance_mode: false,
-            registration_enabled: true,
-            tournaments_enabled: true
-          },
-          security: {
-            password_min_length: 8,
-            session_timeout: 24,
-            two_factor_enabled: true,
-            ip_whitelist: ['192.168.1.0/24', '10.0.0.0/8']
-          },
-          notifications: {
-            email_enabled: true,
-            sms_enabled: false,
-            push_enabled: true,
-            whatsapp_enabled: false
-          },
-          payments: {
-            mpesa_enabled: true,
-            stripe_enabled: false,
-            minimum_amount: 50,
-            maximum_amount: 10000
-          }
+        // Load settings
+        const settingsResult = await getSystemSettings()
+        if (settingsResult.data) {
+          setSettings(settingsResult.data as SystemSettings)
         }
 
-        const mockHealth: SystemHealth = {
-          status: 'healthy',
-          uptime: 99.9,
-          response_time: 120,
-          database_status: 'connected',
-          storage_usage: 65,
-          memory_usage: 45,
-          cpu_usage: 23,
-          active_users: 156,
-          concurrent_tournaments: 8
+        // Load health
+        const healthResult = await getSystemHealth()
+        if (healthResult.data) {
+          setHealth(healthResult.data as SystemHealth)
         }
 
-        const mockUserRoles: UserRole[] = [
-          {
-            id: '1',
-            name: 'Super Admin',
-            permissions: ['all'],
-            created_at: '2024-01-01',
-            user_count: 2
-          },
-          {
-            id: '2',
-            name: 'Admin',
-            permissions: ['tournaments', 'disputes', 'players'],
-            created_at: '2024-01-01',
-            user_count: 5
-          },
-          {
-            id: '3',
-            name: 'Moderator',
-            permissions: ['disputes', 'players'],
-            created_at: '2024-01-01',
-            user_count: 8
-          },
-          {
-            id: '4',
-            name: 'Player',
-            permissions: ['tournaments', 'matches'],
-            created_at: '2024-01-01',
-            user_count: 1200
-          }
-        ]
-
-        setSettings(mockSettings)
-        setHealth(mockHealth)
-        setUserRoles(mockUserRoles)
+        // Load user roles
+        const rolesResult = await getUserRoles()
+        if (rolesResult.data) {
+          setUserRoles(rolesResult.data as UserRole[])
+        }
 
       } catch (error) {
         console.error('Error loading system data:', error)
@@ -171,20 +119,48 @@ export function SystemAdministration() {
   }, [])
 
   const handleSaveSettings = async () => {
-    // Implement settings save logic
-    console.log('Saving settings:', settings)
+    if (!settings) return
+    
+    try {
+      const result = await updateSystemSettings(settings)
+      if (result.error) {
+        console.error('Error saving settings:', result.error)
+        alert('Failed to save settings: ' + result.error)
+        return
+      }
     setShowSettings(false)
+      alert('Settings saved successfully!')
+    } catch (error) {
+      console.error('Error saving settings:', error)
+      alert('Failed to save settings')
+    }
   }
 
   const handleMaintenanceToggle = async () => {
     if (settings) {
-      setSettings({
+      const updatedSettings = {
         ...settings,
         platform: {
           ...settings.platform,
           maintenance_mode: !settings.platform.maintenance_mode
         }
-      })
+      }
+      setSettings(updatedSettings)
+      
+      // Save immediately
+      try {
+        const result = await updateSystemSettings(updatedSettings)
+        if (result.error) {
+          console.error('Error updating maintenance mode:', result.error)
+          // Revert on error
+          setSettings(settings)
+          alert('Failed to update maintenance mode: ' + result.error)
+        }
+      } catch (error) {
+        console.error('Error updating maintenance mode:', error)
+        setSettings(settings)
+        alert('Failed to update maintenance mode')
+      }
     }
   }
 
@@ -418,7 +394,22 @@ export function SystemAdministration() {
                 >
                   {settings?.platform.maintenance_mode ? 'Disable Maintenance' : 'Enable Maintenance'}
                 </Button>
-                <Button variant="outline">
+                <Button 
+                  variant="outline"
+                  onClick={async () => {
+                    setLoading(true)
+                    try {
+                      const healthResult = await getSystemHealth()
+                      if (healthResult.data) {
+                        setHealth(healthResult.data as SystemHealth)
+                      }
+                    } catch (error) {
+                      console.error('Error refreshing system:', error)
+                    } finally {
+                      setLoading(false)
+                    }
+                  }}
+                >
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh System
                 </Button>
@@ -585,11 +576,23 @@ export function SystemAdministration() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-sm font-medium text-gray-700">Platform Name</label>
-                    <Input value={settings?.platform.name || ''} />
+                    <Input 
+                      value={settings?.platform.name || ''} 
+                      onChange={(e) => settings && setSettings({
+                        ...settings,
+                        platform: { ...settings.platform, name: e.target.value }
+                      })}
+                    />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700">Version</label>
-                    <Input value={settings?.platform.version || ''} />
+                    <Input 
+                      value={settings?.platform.version || ''} 
+                      onChange={(e) => settings && setSettings({
+                        ...settings,
+                        platform: { ...settings.platform, version: e.target.value }
+                      })}
+                    />
                   </div>
                 </div>
               </div>
@@ -599,11 +602,25 @@ export function SystemAdministration() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-sm font-medium text-gray-700">Password Min Length</label>
-                    <Input type="number" value={settings?.security.password_min_length || 8} />
+                    <Input 
+                      type="number" 
+                      value={settings?.security.password_min_length || 8} 
+                      onChange={(e) => settings && setSettings({
+                        ...settings,
+                        security: { ...settings.security, password_min_length: parseInt(e.target.value) || 8 }
+                      })}
+                    />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700">Session Timeout (hours)</label>
-                    <Input type="number" value={settings?.security.session_timeout || 24} />
+                    <Input 
+                      type="number" 
+                      value={settings?.security.session_timeout || 24} 
+                      onChange={(e) => settings && setSettings({
+                        ...settings,
+                        security: { ...settings.security, session_timeout: parseInt(e.target.value) || 24 }
+                      })}
+                    />
                   </div>
                 </div>
               </div>
