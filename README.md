@@ -2,7 +2,7 @@
 
 A modern, mobile-first Progressive Web App for automated eFootball tournaments with real-time bracket management, match verification, and prize distribution.
 
-## Features.
+## Features
 
 ### Core Features ✅
 - **Authentication System** - Email/phone/password registration with role-based access (Player/Admin)
