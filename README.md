@@ -394,7 +394,7 @@ export async function initiateMpesaPayment(
 
 - **File Upload Limits** - Max 5MB for screenshots
 
-- **Anti-Fraud** - One account per phone number, device fingerprinting
+- **Anti-Fraud** - One account per phone number, device fingerprinting.
 
 
 
