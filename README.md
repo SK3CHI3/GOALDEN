@@ -1,4 +1,4 @@
-# GOALDEN - eFootball Tournament Platform
+# GOALDEN - eFootball Tournament Platform.
 
 A modern, mobile-first Progressive Web App for automated eFootball tournaments with real-time bracket management, match verification, and prize distribution.
 
